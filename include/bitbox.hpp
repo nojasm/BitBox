@@ -2,6 +2,13 @@
 
 #include <vector>
 #include <string>
+#include <chrono>
+
+#include <SDL.h>
+#include <SDL_image.h>
+
+#include "ui.hpp"
+#include "device.hpp"
 
 using std::vector;
 using std::string;
@@ -10,11 +17,13 @@ class AudioData {
 public:
     int length;
     double** data;
+    AudioData();
 };
 
 class Sample {
 public:
     AudioData* data;
+    Sample();
 };
 
 struct TrackConfig {
@@ -44,6 +53,8 @@ class Effect {
 public:
     string name;
     vector<Parameter> parameters;
+    Effect();
+    virtual void process(double**, double**, int);
 };
 
 class Track {
@@ -51,6 +62,7 @@ public:
     Sample* sample;
     TrackConfig config;
     vector<Effect> effects;
+    Track();
 };
 
 class Project {
@@ -58,15 +70,42 @@ public:
     int length = 44100 * 10;
     
     vector<Track*> tracks;
+
+    Project();
 };
 
 struct ProjectInfo {
     string name;
 };
 
+class Device;
+class UIManager;
+
+enum class InputEventType {
+    BACK = 0, SET, PLAY, ROTARY,
+    ROTARY_LEFT, ROTARY_RIGHT,
+    N_INPUTS
+};
+
+enum class InputEventValue {
+    NONE, JUST_PRESSED, PRESSED, JUST_RELEASED
+};
+
+struct InputEvent {
+    InputEventType type;
+    InputEventValue value;
+};
+
 class BitBox {
 public:
     UIManager* ui;
+    Device* device;
+
+    InputEventValue* inputs;
+
+    Project* project;
+
+    std::chrono::high_resolution_clock::time_point lastRenderTime;
 
     Project* currentProject;
     bool isRunning = true;
@@ -74,12 +113,10 @@ public:
     BitBox();
     void loop();
     void events();
-}
 
-class Device {
-public:
+    bool inputIsPressed(InputEventType);
+    bool inputIsJustPressed(InputEventType);
 
-    vector<ProjectInfo> getProjects();
-    Project* loadProject(string);
-    void saveProject(Project);
+    void clearScreen();
+    void setPixel(int, int, bool);
 };
