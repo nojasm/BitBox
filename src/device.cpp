@@ -5,7 +5,7 @@ Device::Device() {
     SDL_Init(SDL_INIT_EVERYTHING);
     IMG_Init(IMG_INIT_PNG);
     
-    window = SDL_CreateWindow("EMULATOR", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 200, 100, SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("EMULATOR", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 600, 300, SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_RenderSetLogicalSize(renderer, screenWidth, screenHeight);
     
@@ -58,8 +58,8 @@ Project* Device::loadProject(string name) {
     Track* track3 = new Track();
     Track* track4 = new Track();
 
-    track1->config.volume = 0.5;
-    track1->config.samplesDelay = 5000;
+    track1->volume = 0.5;
+    track1->msDelay = 0.5;
     track1->sample = this->loadSampleFromPath("test.wav");
     
     project->tracks.push_back(track1);

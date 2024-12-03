@@ -7,7 +7,9 @@
                 "C:\\Libraries\\SDL2-2.26.0\\include",
                 "C:\\Libraries\\SDL2_ttf-2.20.2\\include",
                 "C:\\Libraries\\SDL2_image-2.6.3\\include",
-                "${workspaceFolder}/include"
+                "${workspaceFolder}/include",
+                "/usr/include/SDL2",
+                "${workspaceFolder}/effects"
             ],
             "defines": [
                 "_DEBUG",

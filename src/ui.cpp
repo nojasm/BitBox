@@ -1,5 +1,7 @@
 #include "ui.hpp"
 
+Rows::Rows() {}
+
 UIManager::UIManager() {
     this->charset = new Charset();
 }
@@ -25,10 +27,28 @@ int UIManager::getCharIndexFromChar(char c) {
 }
 
 void UIManager::drawBox(int x, int y, int w, int h, bool on) {
+    for (int px = x; px < x + w; px++) {
+        this->drawPixel(px, y, on);
+        this->drawPixel(px, y + h, on);
+    }
+
+    for (int py = y; py < y + h; py++) {
+        this->drawPixel(x, py, on);
+        this->drawPixel(x + w, py, on);
+    }
+}
+
+void UIManager::fillBox(int x, int y, int w, int h, bool on) {
     for (int py = y; py < y + h; py++) {
         for (int px = x; px < x + w; px++) {
             this->drawPixel(px, py, on);
         }
+    }
+}
+
+void UIManager::drawRows(Rows* rows) {
+    for (int i = 0; i < 4; i++) {
+        
     }
 }
 
@@ -52,6 +72,14 @@ int UIManager::calculateTextWidth(string text, int charWidth, int sep, int space
     return textWidth;
 }
 
+void UIManager::openDropdown(string title, vector<string> options, int initialRow) {
+    this->dropdownOverlay.isOpened = true;
+    this->dropdownOverlay.row = initialRow;
+    this->dropdownOverlay.lastIndex = initialRow;
+    this->dropdownOverlay.options = options;
+    this->dropdownOverlay.title = title;
+}
+
 void UIManager::drawText(int x, int y, string text, bool inverted) {
     int charWidth = charset->charWidth;
     int charHeight = charset->charHeight;
@@ -59,7 +87,7 @@ void UIManager::drawText(int x, int y, string text, bool inverted) {
     int space = 3;
     
     if (inverted) {
-        this->drawBox(x - 1, y - 1, calculateTextWidth(text, charWidth, sep, space) + 2, charHeight + 2);
+        this->fillBox(x - 1, y - 1, calculateTextWidth(text, charWidth, sep, space) + 2, charHeight + 2);
     }
 
     int xPos = x;

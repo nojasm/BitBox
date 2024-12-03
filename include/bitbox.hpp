@@ -26,18 +26,13 @@ public:
     Sample();
 };
 
-struct TrackConfig {
-    double volume;
-    int samplesDelay;
-};
-
 struct AutomizationPoint {
     int x = 0;      // X-Sample (0 to project.length)
     double y = 0;   // Y-Value (-1 to +1)
 };
 
 struct Automization {
-    vector<AutomizationPoint> points;
+    vector<AutomizationPoint> points = {{0, 0}, {1, 0}};
 };
 
 struct Parameter {
@@ -53,15 +48,23 @@ class Effect {
 public:
     string name;
     vector<Parameter> parameters;
-    Effect();
-    virtual void process(double**, double**, int);
+    Effect(string);
+    virtual void process(double**, double**, int) = 0;
+};
+
+enum class TrackMode {
+    NONE = 0, SOLO, MUTE
 };
 
 class Track {
 public:
     Sample* sample;
-    TrackConfig config;
-    vector<Effect> effects;
+    vector<Effect*> effects;
+
+    double volume;
+    TrackMode trackMode = TrackMode::NONE;
+    double msDelay = 0.0;
+
     Track();
 };
 
@@ -119,4 +122,7 @@ public:
 
     void clearScreen();
     void setPixel(int, int, bool);
+
+    vector<string> getEffectNames();
+    Effect* newEffect(string);
 };
