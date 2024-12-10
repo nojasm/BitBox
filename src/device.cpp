@@ -32,7 +32,7 @@ void Device::updateScreen() {
     SDL_RenderPresent(renderer);
 }
 
-Sample* Device::loadSampleFromPath(string path) {
+/*Sample* Device::loadSampleFromPath(string path) {
     Sample* sample = new Sample();
     int size = 44100 * 2;
     sample->data->length = size;
@@ -44,7 +44,7 @@ Sample* Device::loadSampleFromPath(string path) {
         sample->data->data[1][i] = sample->data->data[0][i];
     }
     return sample;
-}
+}*/
 
 vector<ProjectInfo> Device::getProjects() {
     return {};
@@ -52,7 +52,6 @@ vector<ProjectInfo> Device::getProjects() {
 
 Project* Device::loadProject(string name) {
     Project* project = new Project();
-    project->length = 44100 * 10;
     Track* track1 = new Track();
     Track* track2 = new Track();
     Track* track3 = new Track();
@@ -70,6 +69,34 @@ Project* Device::loadProject(string name) {
     return project;
 }
 
-void saveProject(Project* project) {
-    
+void Device::saveSample(Sample* sample) {
+    AudioFile<double> file;
+    file.samples.clear();
+
+    for (int c = 0; c < 2; c++) {
+        vector<double> channelSamples;
+        for (int s = 0; s < sample->data->length; s++) {
+            channelSamples.push_back(sample->data->data[c][s]);
+        }
+        file.samples.push_back(channelSamples);
+    }
+
+    file.save(sample->path);
+}
+
+Sample* Device::loadSampleFromPath(string path) {
+    AudioFile<double>* file = new AudioFile<double>(path);
+
+    // TODO: Check if file is 44100Hz, 2-Channel, etc.
+    // TODO: samples that are too long would break this
+
+    Sample* sample = new Sample(file->getNumSamplesPerChannel());
+    sample->path = path;
+    for (int c = 0; c < 2; c++) {
+        for (int s = 0; s < file->getNumSamplesPerChannel(); s++) {
+            sample->data->data[c][s] = file->samples[c][s];
+        }
+    }
+
+    return sample;
 }

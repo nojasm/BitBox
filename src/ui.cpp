@@ -4,6 +4,8 @@ Rows::Rows() {}
 
 UIManager::UIManager() {
     this->charset = new Charset();
+    
+    this->trackConfList = new ScrollingList();
 }
 
 void UIManager::drawPixel(int x, int y, bool on) {
@@ -29,7 +31,7 @@ int UIManager::getCharIndexFromChar(char c) {
 void UIManager::drawBox(int x, int y, int w, int h, bool on) {
     for (int px = x; px < x + w; px++) {
         this->drawPixel(px, y, on);
-        this->drawPixel(px, y + h, on);
+        this->drawPixel(px, y + h + 1, on);
     }
 
     for (int py = y; py < y + h; py++) {

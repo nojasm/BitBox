@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <chrono>
 
 using std::vector;
 using std::string;
@@ -82,6 +83,77 @@ public:
     Rows();
 };
 
+
+// Use this to handle scrolling list functionalities
+class ScrollingList {
+public:
+    bool editeableValues = true;
+    int currentRow = 0;
+    int currentScroll = 0;
+    int nElements = 4;
+
+    int relativeRow = 0;
+
+    bool editing = false;
+    bool exit = false;
+
+    double addValue = 0;  // +1 for increase, -1 for decrease, 0 if not changing
+
+    int getAbsoluteIndex(int rel) {
+        return rel + currentScroll;
+    }
+
+    int getRelativeIndex(int abs) {
+        return abs - currentScroll;
+    }
+
+    bool shouldDraw(int index, int* yValue) {
+        if (index >= currentScroll && index < (currentScroll + 4)) {
+            *yValue = 11 + (index - currentScroll) * 11;
+            return true;
+        }
+        return false;
+    }
+
+    // ROTARY left (scroll / decrease value)
+    void rotaryLeft() {
+        if (editing) {
+            addValue = -1;
+        } else {
+            currentRow = SDL_clamp(currentRow - 1, 0, nElements - 1);
+            if (currentRow < currentScroll)
+                currentScroll--;
+        }
+    }
+
+    // ROTARY right (scroll / increase value)  
+    void rotaryRight() {
+        if (editing) {
+            addValue = 1;
+        } else {
+            currentRow = SDL_clamp(currentRow + 1, 0, nElements - 1);
+            if ((currentRow - currentScroll) > 3) {
+                currentScroll++;
+            }
+        }
+    }
+
+    // SET button
+    void set() {
+        if (editeableValues) {
+            editing = !editing;
+        }
+    }
+
+
+    void back() {
+        if (editing)
+            editing = false;
+        else
+            exit = true;
+    }
+};
+
 class UIManager {
 public:
     BitBox* bb;
@@ -95,7 +167,15 @@ public:
     // If empty, show normal UI. If not, show those one by one
     vector<Rows*> rowsStack;
 
+    ScrollingList* trackConfList;
+
     int testValue = 1;
+
+    // To show button that lights up, set this to true and reset
+    // buttonLightUpStart.
+    bool buttonLightUp = false;
+    std::chrono::high_resolution_clock::time_point buttonLightUpStart;
+    int buttonLightUpMs = 100;
 
     int projectTrackRow = 0;
     int projectTrackCol = 0;
@@ -107,6 +187,10 @@ public:
 
     int trackEffectsEffectIndex = 0;
     int trackEffectSettingsRow = 0;
+    
+    int trackEffectsParameterRow = 0;           // Currently selected parameter
+    int trackEffectsParameterScroll = 0;        // Current parameter scroll value
+    bool trackEffectsParameterEdit = false;     // Currently editing parameter?
 
     UIManager();
 

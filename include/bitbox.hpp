@@ -18,27 +18,62 @@ public:
     int length;
     double** data;
     AudioData();
+    AudioData(int);
 };
 
+// A sample is a file on the sd-card with AudioData
 class Sample {
 public:
     AudioData* data;
+    string path;
     Sample();
+    Sample(int);
 };
 
 struct AutomizationPoint {
-    int x = 0;      // X-Sample (0 to project.length)
+    double x = 0;   // X-Sample (0 to 1)
     double y = 0;   // Y-Value (-1 to +1)
 };
 
 struct Automization {
     vector<AutomizationPoint> points = {{0, 0}, {1, 0}};
+    double get(double x) {
+        for (int i = 0; i < points.size(); i++) {
+            if (x == 0.0) {
+                return points[i].y;
+            } else if (x == 1.0) {
+                return points[points.size() - 1].y;
+            } else if (points[i].x > x) {
+                // X is too far, interpolate between last X and this one
+                double x1 = points[i - 1].x;
+                double x2 = points[i].x;
+                double y1 = points[i - 1].y;
+                double y2 = points[i].y;
+                
+                // 0 = x1, 1 = x2
+                double rel = (x - x1) / (double)(x2 - x1);
+                double y = y1 + rel * (double)(y2 - y1);
+                return y;
+            }
+        }
+
+        return 0.0;
+    }
+};
+
+enum class ParameterType {
+    PROCENT, MS, SAMPLES
 };
 
 struct Parameter {
     string name;
     string id;
+    ParameterType type = ParameterType::PROCENT;
+
+    double min = 0.0;
+    double max = 1.0;
     double value;
+    double defaultValue = 0.0;
 
     Automization automization;
     bool isAutomized();
@@ -48,29 +83,44 @@ class Effect {
 public:
     string name;
     vector<Parameter> parameters;
+    int sampleRate;
+    
     Effect(string);
     virtual void process(double**, double**, int) = 0;
+
+    // Get calculated parameter value based of index and relative sample position
+    double getParameterValue(int, double);
 };
 
 enum class TrackMode {
     NONE = 0, SOLO, MUTE
 };
 
+class BitBox;
+
 class Track {
 public:
     Sample* sample;
     vector<Effect*> effects;
+    BitBox* bitBox;
+
+    int trackIndex = -1;
 
     double volume;
     TrackMode trackMode = TrackMode::NONE;
-    double msDelay = 0.0;
+    int msDelay = 0.0;
 
     Track();
+    void freeze();
+    void duplicate(Track*);
+    AudioData* render();
+    void clear();
 };
 
 class Project {
 public:
-    int length = 44100 * 10;
+    int length = 44100 * 1;
+    int sampleRate = 44100;
     
     vector<Track*> tracks;
 

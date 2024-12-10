@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bitbox.hpp"
+#include "AudioFile.h"
 
 #include <vector>
 #include <string>
@@ -24,10 +25,11 @@ public:
     
     Device();
     void updateScreen();
-
+    
     vector<ProjectInfo> getProjects();
     Project* loadProject(string);
     void saveProject(Project*);
 
     Sample* loadSampleFromPath(string);
+    void saveSample(Sample*);
 };

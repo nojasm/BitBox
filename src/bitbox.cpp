@@ -9,6 +9,72 @@
 Track::Track() {
     Effect* fx1 = new BitBoxEffect::TestEffect();
     this->effects.push_back(fx1);
+    Effect* fx2 = new BitBoxEffect::Test2Effect();
+    this->effects.push_back(fx2);
+}
+
+// Destroys the sample and resets all track configurations
+void Track::clear() {
+    for (int i = 0; i < this->effects.size(); i++) {
+        delete this->effects[i];
+    }
+    this->effects.clear();
+    this->volume = 1.0;
+    this->msDelay = 0;
+    if (this->sample != nullptr) {
+        free(this->sample->data->data[0]);
+        free(this->sample->data->data[1]);
+        free(this->sample->data->data);
+        free(this->sample->data);
+        free(this->sample);
+        this->sample = nullptr;
+    }
+}
+
+void Track::duplicate(Track* other) {}
+
+AudioData* Track::render() {
+    int nSamples = this->bitBox->project->length;
+    AudioData* audio = new AudioData(nSamples);
+    
+    int delaySamples = this->msDelay / 1000.0 * this->bitBox->project->sampleRate;
+
+    for (int i = 0; i < nSamples; i++) {
+        for (int c = 0; c < 2; c++) {
+            int sampleIndex = i - delaySamples;
+            if (sampleIndex >= 0 && sampleIndex < this->sample->data->length)
+                audio->data[c][i] = this->sample->data->data[c][sampleIndex];
+            else
+                audio->data[c][i] = 0;
+        }
+    }
+
+    // TODO: Check if putting <audio> both as double** in and double** out works correctly
+    for (int e = 0; e < this->effects.size(); e++) {
+        Effect* fx = this->effects[e];
+        fx->sampleRate = this->bitBox->project->sampleRate;
+        fx->process(audio->data, audio->data, nSamples);
+    }
+
+    return audio;
+}
+
+void Track::freeze() {
+    // Render track and save as sample
+    AudioData* audio = this->render();
+    Sample* sample = new Sample();
+    sample->data = audio;
+    string sampleName ="render_track_" + std::to_string(this->trackIndex + 1) + "_" + std::to_string(time(NULL)) + ".wav";
+    sample->path = sampleName;
+    this->bitBox->device->saveSample(sample);
+
+    // Clear and reset track
+    this->clear();
+
+    printf("saved to %s\n", sampleName.c_str());
+
+    // Load frozen track as sample to same track again
+    this->sample = this->bitBox->device->loadSampleFromPath(sampleName);
 }
 
 Project::Project() {
@@ -19,12 +85,27 @@ AudioData::AudioData() {
 
 }
 
+AudioData::AudioData(int len) : length(len) {
+    this->data = (double**)malloc(sizeof(double*) * 2);
+    this->data[0] = (double*)malloc(sizeof(double) * len);
+    this->data[1] = (double*)malloc(sizeof(double) * len);
+}
+
 Sample::Sample() {
     this->data = new AudioData();
 }
 
+Sample::Sample(int len) {
+    this->data = new AudioData(len);
+}
+
 Effect::Effect(string name) : name(name) {
     
+}
+
+double Effect::getParameterValue(int index, double atPos) {
+    Parameter* param = &this->parameters[index];
+    return SDL_clamp(param->value + param->automization.get(atPos), param->min, param->max);
 }
 
 BitBox::BitBox() {
@@ -36,6 +117,10 @@ BitBox::BitBox() {
     ui = new UIManager();
 
     this->project = device->loadProject("/");
+    for (int i = 0; i < 4; i++) {
+        this->project->tracks[0]->bitBox = this;
+        this->project->tracks[0]->trackIndex = i;
+    }
 }
 
 vector<string> BitBox::getEffectNames() {
@@ -213,17 +298,121 @@ void BitBox::loop() {
     } else if (this->ui->view == UIView::TRACK_CONF) {
         this->ui->title = "CONF";
         this->ui->drawHorizontal(9);
-        if (this->inputIsJustPressed(InputEventType::BACK)) this->ui->view = UIView::PROJECT;
 
-        this->ui->drawText(1, 30, "MODE", false);
-        vector<string> modeOptions = {"NONE", "SOLO", "MUTE"};
-        this->ui->drawText(60, 30, modeOptions[(int)track->trackMode], false);
+        ScrollingList* list = this->ui->trackConfList;
 
-        if (this->inputIsJustPressed(InputEventType::SET)) {
+        list->nElements = 6;
+
+        // VOL, DELAY, FREEZE, CLEAR
+        
+        // Pass inputs to scrolling list
+        if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) list->rotaryLeft();
+        if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) list->rotaryRight();
+        if (this->inputIsJustPressed(InputEventType::SET)) list->set();
+        if (this->inputIsJustPressed(InputEventType::BACK)) list->back();
+
+        if (list->exit)
+            this->ui->view = UIView::PROJECT;
+
+        // Draw scrolling list elements
+        for (int rel = 0; rel < 4; rel++) {
+            int abs = list->getAbsoluteIndex(rel);
+            bool highlight = list->currentRow == abs;
+            bool editing = list->currentRow == abs && list->editing;
+            int yValue = 11 + rel * 11;
+            //printf("%d -> rel %d   highlight %d, edit %d\n", abs, rel, highlight, editing);
+
+            int buttonOnPassedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - this->ui->buttonLightUpStart).count();
+            if (this->ui->buttonLightUp && buttonOnPassedMs > this->ui->buttonLightUpMs) {
+                this->ui->buttonLightUp = false;
+            }
+
+            bool buttonLightUp = this->ui->buttonLightUp && highlight;
+
+            // Draw box around highlighted row
+            if (highlight && !editing) {
+                this->ui->drawBox(0, yValue - 1, 126, 10);
+            }
+
+            if (abs == 0) {
+                this->ui->drawText(1, yValue, "VOLUME");
+                this->ui->drawText(60, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
+                if (editing) track->volume = SDL_clamp(track->volume + (list->addValue * 0.05), 0, 1);
+            } else if (abs == 1) {
+                this->ui->drawText(1, yValue, "DELAY");
+                this->ui->drawText(60, yValue, std::to_string(track->msDelay) + "MS", editing);
+                if (editing) track->msDelay = SDL_clamp(track->msDelay + (list->addValue * 10), 0, 1000);
+            } else if (abs == 2) {
+                this->ui->drawText(1, yValue, "MODE");
+                this->ui->drawText(60, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
+            } else if (abs == 3) {
+                this->ui->drawText(1, yValue, "FREEZE");
+                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
+                else this->ui->drawBox(90, yValue, 35, 8);
+
+                if (editing) {
+                    printf("freeze\n");
+                    list->editing = false;
+                    this->ui->buttonLightUp = true;
+                    this->ui->buttonLightUpStart = std::chrono::high_resolution_clock::now();
+
+                    track->freeze();
+                }
+            } else if (abs == 4) {
+                this->ui->drawText(1, yValue, "DUPLICATE");
+                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
+                else this->ui->drawBox(90, yValue, 35, 8);
+
+                if (editing) {
+                    printf("duplicate\n");
+                    list->editing = false;
+                    this->ui->buttonLightUp = true;
+                    this->ui->buttonLightUpStart = std::chrono::high_resolution_clock::now();
+                }
+            } else if (abs == 5) {
+                this->ui->drawText(1, yValue, "CLEAR");
+                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
+                else this->ui->drawBox(90, yValue, 35, 8);
+                if (editing) {
+                    printf("clear\n");
+                    list->editing = false;
+                    this->ui->buttonLightUp = true;
+                    this->ui->buttonLightUpStart = std::chrono::high_resolution_clock::now();
+                    track->clear();
+                }
+            }
+
+            if (editing) {
+                list->addValue = 0;
+            }
+        }
+
+
+
+        /*
+        if (this->ui->trackConfList->shouldDraw(1, &yValue)) {
+            this->ui->drawText(1, yValue, "DELAY", this->ui->trackConfList->currentRow == 1);
+        }
+        if (this->ui->trackConfList->shouldDraw(2, &yValue)) {
+            this->ui->drawText(1, yValue, "MODE", false);
+            vector<string> modeOptions = {"NONE", "SOLO", "MUTE"};
+            this->ui->drawText(60, yValue, modeOptions[(int)track->trackMode], this->ui->trackConfList->currentRow == 0);
+        }
+        if (this->ui->trackConfList->shouldDraw(3, &yValue)) {
+            this->ui->drawText(60, yValue, "WOW", this->ui->trackConfList->currentRow == 3);
+        }
+        if (this->ui->trackConfList->shouldDraw(4, &yValue)) {
+            this->ui->drawText(60, yValue, "END!", this->ui->trackConfList->currentRow == 4);
+        }*/
+
+        // TODO: config scrolling list
+        // TODO: add to scrolling list and test that class
+
+        /*if (this->inputIsJustPressed(InputEventType::SET)) {
             if (this->ui->trackConfRow == 0) {
                 this->ui->openDropdown("MODE", modeOptions, (int)track->trackMode);
             }
-        }
+        }*/
 
         if (this->ui->trackConfRow && this->ui->dropdownOverlay.justClosed) {
             track->trackMode = (TrackMode)this->ui->dropdownOverlay.row;
@@ -293,10 +482,10 @@ void BitBox::loop() {
             this->ui->view = UIView::TRACK_FX_EFFECT;
         } else if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) {
             int nEffects = this->project->tracks[this->ui->trackOpenedTrackIndex]->effects.size();
-            this->ui->trackEffectsEffectIndex = SDL_clamp(this->ui->trackEffectsEffectIndex - 1, 0, nEffects);
+            this->ui->trackEffectsEffectIndex = SDL_clamp(this->ui->trackEffectsEffectIndex - 1, 0, nEffects - 1);
         } else if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) {
             int nEffects = this->project->tracks[this->ui->trackOpenedTrackIndex]->effects.size();
-            this->ui->trackEffectsEffectIndex = SDL_clamp(this->ui->trackEffectsEffectIndex + 1, 0, nEffects);
+            this->ui->trackEffectsEffectIndex = SDL_clamp(this->ui->trackEffectsEffectIndex + 1, 0, nEffects - 1);
         }
     
     } else if (this->ui->view == UIView::TRACK_FX_SETTINGS) {
@@ -305,6 +494,85 @@ void BitBox::loop() {
     } else if (this->ui->view == UIView::TRACK_FX_EFFECT) {
         Effect* effect = track->effects[this->ui->trackEffectsEffectIndex];
         this->ui->title = "FX " + effect->name;
+
+        if (this->inputIsJustPressed(InputEventType::BACK)) {
+            this->ui->view == UIView::TRACK_FX;
+        }
+
+        // Display parameters
+        for (int i = 0; i < effect->parameters.size(); i++) {
+            int rel = i;
+            Parameter* param = &effect->parameters[i];
+
+            bool highlight = i == this->ui->trackEffectsParameterRow;
+            bool editing = highlight && this->ui->trackEffectsParameterEdit;
+
+            string keyStr = param->name;
+            string valueStr;
+            if (param->type == ParameterType::PROCENT) {
+                valueStr = std::to_string((int)round(param->value * 100)) + "%";
+            } else if (param->type == ParameterType::MS) {
+                valueStr = std::to_string((int)round(param->value)) + "MS";
+            } else if (param->type == ParameterType::SAMPLES) {
+                valueStr = std::to_string((int)round(param->value));
+            } else {
+                valueStr = "???";
+            }
+
+            int valueStrWidth = this->ui->calculateTextWidth(valueStr, 5, 1, 3);
+            
+            this->ui->drawText(1, 11 + 11 * rel, keyStr);
+
+            if (highlight && !editing)
+                this->ui->drawBox(126 - valueStrWidth - 1, 11 + 11 * rel - 1, valueStrWidth + 2, 9 + 2);
+            
+            this->ui->drawText(126 - valueStrWidth, 11 + 11 * rel, valueStr, editing);
+        }
+
+        if (this->ui->trackEffectsParameterEdit) {
+            // Rotary edits value
+            Parameter* param = &effect->parameters[this->ui->trackEffectsParameterRow];
+            double x;
+            if (param->type == ParameterType::MS) x = 5;  // TODO: When < 50, go in x=2 steps
+            else if (param->type == ParameterType::PROCENT) x = 0.05;
+            else if (param->type == ParameterType::SAMPLES) x = 20;
+
+            if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) {
+                param->value = SDL_clamp(param->value - x, param->min, param->max);
+            } else if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) {
+                param->value = SDL_clamp(param->value + x, param->min, param->max);
+            } else if (this->inputIsJustPressed(InputEventType::ROTARY)) {
+                // Rotary inwards in edit mode resets the value
+                param->value = param->defaultValue;
+            }
+
+        } else {
+            // Rotary scrolls through parameter values
+            if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) {
+                if ((this->ui->trackEffectsParameterRow - 1) < this->ui->trackEffectsParameterScroll)
+                    this->ui->trackEffectsParameterScroll--;
+                
+                this->ui->trackEffectsParameterRow = SDL_clamp(this->ui->trackEffectsParameterRow - 1, 0, effect->parameters.size() - 1);
+            } else if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) {
+                if ((this->ui->trackEffectsParameterRow - this->ui->trackEffectsParameterScroll + 1) > 4)
+                    this->ui->trackEffectsParameterScroll++;
+                
+                this->ui->trackEffectsParameterRow = SDL_clamp(this->ui->trackEffectsParameterRow + 1, 0, effect->parameters.size() - 1);
+            } else if (this->inputIsJustPressed(InputEventType::ROTARY)) {
+                // Rotary inwards while not in edit mode adds automization to parameter
+                printf("ADD AUTOMIZATION\n");
+            }
+        }
+
+        // SET and BACK stuff
+        if (this->inputIsJustPressed(InputEventType::SET)) {
+            this->ui->trackEffectsParameterEdit = !this->ui->trackEffectsParameterEdit;
+        } else if (this->inputIsJustPressed(InputEventType::BACK)) {
+            if (this->ui->trackEffectsParameterEdit)
+                this->ui->trackEffectsParameterEdit = false;
+            else
+                this->ui->view = UIView::TRACK_FX;
+        }
     }
 
     if (this->ui->title != "" && !this->ui->dropdownOverlay.isOpened) {
