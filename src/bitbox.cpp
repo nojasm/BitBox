@@ -1,17 +1,15 @@
+#include <sstream>
+#include <iomanip>
+
 #include "bitbox.hpp"
 #include "ui.hpp"
 #include "device.hpp"
 
 // Effects
-#include "test.hpp"
+#include "lfo.hpp"
 #include "test2.hpp"
 
-Track::Track() {
-    Effect* fx1 = new BitBoxEffect::TestEffect();
-    this->effects.push_back(fx1);
-    Effect* fx2 = new BitBoxEffect::Test2Effect();
-    this->effects.push_back(fx2);
-}
+Track::Track() {}
 
 // Destroys the sample and resets all track configurations
 void Track::clear() {
@@ -37,13 +35,18 @@ AudioData* Track::render() {
     int nSamples = this->bitBox->project->length;
     AudioData* audio = new AudioData(nSamples);
     
+    if (this->sample == nullptr) {
+        // There is no sample on this track, return empty AudioData
+        return audio;
+    }
+
     int delaySamples = this->msDelay / 1000.0 * this->bitBox->project->sampleRate;
 
     for (int i = 0; i < nSamples; i++) {
         for (int c = 0; c < 2; c++) {
             int sampleIndex = i - delaySamples;
             if (sampleIndex >= 0 && sampleIndex < this->sample->data->length)
-                audio->data[c][i] = this->sample->data->data[c][sampleIndex];
+                audio->data[c][i] = this->sample->data->data[c][sampleIndex] * this->volume;
             else
                 audio->data[c][i] = 0;
         }
@@ -56,6 +59,8 @@ AudioData* Track::render() {
         fx->process(audio->data, audio->data, nSamples);
     }
 
+    // TODO: Should track volume be before or after effects? -> Maybe add setting for this
+
     return audio;
 }
 
@@ -64,9 +69,11 @@ void Track::freeze() {
     AudioData* audio = this->render();
     Sample* sample = new Sample();
     sample->data = audio;
-    string sampleName ="render_track_" + std::to_string(this->trackIndex + 1) + "_" + std::to_string(time(NULL)) + ".wav";
+    string sampleName = "render_track_" + std::to_string(this->trackIndex + 1) + "_" + std::to_string(time(NULL)) + ".wav";
+    sampleName = "freezed/" + sampleName;
     sample->path = sampleName;
     this->bitBox->device->saveSample(sample);
+    delete sample;
 
     // Clear and reset track
     this->clear();
@@ -78,7 +85,34 @@ void Track::freeze() {
 }
 
 Project::Project() {
-    this->length = 0;
+    this->length = 44100 * 1.5;
+}
+
+AudioData* Project::render() {
+    AudioData* audio = new AudioData(this->length);
+    for (int i = 0; i < this->tracks.size(); i++) {
+        AudioData* trackAudio = this->tracks[i]->render();
+        for (int c = 0; c < 2; c++) {
+            for (int s = 0; s < trackAudio->length; s++) {
+                audio->data[c][s] += trackAudio->data[c][s];
+            }
+        }
+
+        delete trackAudio;
+    }
+
+    return audio;
+}
+
+Sample* Project::exportToSample() {
+    // Render project and save as sample
+    AudioData* audio = this->render();
+    Sample* sample = new Sample();
+    sample->data = audio;
+    string sampleName = "exported_" + std::to_string(time(NULL)) + ".wav";
+    sampleName = "exported/" + sampleName;
+    sample->path = sampleName;
+    return sample;
 }
 
 AudioData::AudioData() {
@@ -91,12 +125,22 @@ AudioData::AudioData(int len) : length(len) {
     this->data[1] = (double*)malloc(sizeof(double) * len);
 }
 
+AudioData::~AudioData() {
+    free(this->data[0]);
+    free(this->data[1]);
+    free(this->data);
+}
+
 Sample::Sample() {
     this->data = new AudioData();
 }
 
 Sample::Sample(int len) {
     this->data = new AudioData(len);
+}
+
+Sample::~Sample() {
+    delete this->data;
 }
 
 Effect::Effect(string name) : name(name) {
@@ -115,11 +159,13 @@ BitBox::BitBox() {
     }
 
     ui = new UIManager();
+}
 
-    this->project = device->loadProject("/");
+void BitBox::openProject(string path) {
+    this->project = device->loadProject(path);
     for (int i = 0; i < 4; i++) {
-        this->project->tracks[0]->bitBox = this;
-        this->project->tracks[0]->trackIndex = i;
+        this->project->tracks[i]->bitBox = this;
+        this->project->tracks[i]->trackIndex = i;
     }
 }
 
@@ -188,9 +234,23 @@ void BitBox::events() {
                 this->inputs[(int)InputEventType::ROTARY_LEFT] = value;
             } else if (event.key.keysym.sym == SDL_KeyCode::SDLK_r) {
                 this->inputs[(int)InputEventType::ROTARY] = value;
+            } else if (event.key.keysym.sym == SDL_KeyCode::SDLK_p) {
+                this->inputs[(int)InputEventType::PLAY] = value;
             }
         }
     }
+
+    if (this->inputIsJustPressed(InputEventType::PLAY)) {
+        Sample* sample = this->project->exportToSample();
+        this->device->saveSample(sample);
+        delete sample;
+    }
+}
+
+string doubleToString(double value, int precision) {
+    std::stringstream stream;
+    stream << std::fixed << std::setprecision(precision) << value;
+    return stream.str();
 }
 
 void BitBox::loop() {
@@ -204,7 +264,14 @@ void BitBox::loop() {
     if (this->project->tracks.size() == 0) track = nullptr;
     else track = this->project->tracks[this->ui->trackOpenedTrackIndex];
 
-    if (this->ui->rowsStack.size() > 0) {
+        if (this->ui->pages.size() > 0) {
+        // Always display last page in stack
+        Page* page = this->ui->pages[this->ui->pages.size() - 1];
+        if (page->exit) {
+            
+        }
+
+    } else if (this->ui->rowsStack.size() > 0) {
         // Always display last Rows in stack
         Rows* rows = this->ui->rowsStack[this->ui->rowsStack.size() - 1];
         for (int i = 0; i < rows->options.size(); i++) {
@@ -288,31 +355,28 @@ void BitBox::loop() {
                 this->ui->projectTrackRow = SDL_clamp(this->ui->projectTrackRow - 1, 0, 3);
             if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT))
                 this->ui->projectTrackRow = SDL_clamp(this->ui->projectTrackRow + 1, 0, 3);
-            if (this->inputIsPressed(InputEventType::SET))
+            if (this->inputIsJustPressed(InputEventType::SET))
                 this->ui->projectTrackRowIsSelected = true;
         }
-    } else if (this->ui->view == UIView::TRACK_SAMP) {
-        this->ui->title = "SAMP";
-        if (this->inputIsJustPressed(InputEventType::BACK)) this->ui->view = UIView::PROJECT;
-    
-    } else if (this->ui->view == UIView::TRACK_CONF) {
-        this->ui->title = "CONF";
-        this->ui->drawHorizontal(9);
 
-        ScrollingList* list = this->ui->trackConfList;
-
-        list->nElements = 6;
-
-        // VOL, DELAY, FREEZE, CLEAR
+        if (this->inputIsJustPressed(InputEventType::ROTARY))
+            this->ui->view = UIView::PROJECT_ALT;
         
-        // Pass inputs to scrolling list
+    } else if (this->ui->view == UIView::PROJECT_ALT) {
+        this->ui->title = "PROJECT";
+        
+        ScrollingList* list = this->ui->projectConfList;
+        list->nElements = 2;
+
         if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) list->rotaryLeft();
         if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) list->rotaryRight();
         if (this->inputIsJustPressed(InputEventType::SET)) list->set();
         if (this->inputIsJustPressed(InputEventType::BACK)) list->back();
 
-        if (list->exit)
+        if (list->exit) {
             this->ui->view = UIView::PROJECT;
+            list->exit = false;
+        }
 
         // Draw scrolling list elements
         for (int rel = 0; rel < 4; rel++) {
@@ -335,20 +399,95 @@ void BitBox::loop() {
             }
 
             if (abs == 0) {
+                double trackLengthSec = project->length / (double)project->sampleRate;
+                this->ui->drawText(1, yValue, "TRACK LEN");
+                this->ui->drawText(60, yValue, doubleToString(trackLengthSec, 3) + "s", editing);
+                if (editing) {
+                    double stepSize = SDL_clamp(trackLengthSec / 10, 0.001, 0.1);
+                    project->length = SDL_clamp(project->length + list->addValue * (stepSize * project->sampleRate), 0, project->sampleRate * 60);
+                }
+            } else if (abs == 1) {
+                this->ui->drawText(1, yValue, "EXPORT");
+                if (buttonLightUp) this->ui->fillBox(91, yValue + 1, 33, 6);
+                else this->ui->drawBox(91, yValue + 1, 33, 6);
+
+                if (editing) {
+                    printf("export\n");
+                    list->editing = false;
+                    this->ui->buttonLightUp = true;
+                    this->ui->buttonLightUpStart = std::chrono::high_resolution_clock::now();
+
+                    Sample* exported = project->exportToSample();
+                    this->device->saveSample(exported);
+                    delete exported;
+                }
+            }
+
+            if (editing) {
+                list->addValue = 0;
+            }
+        }
+
+    } else if (this->ui->view == UIView::TRACK_SAMP) {
+        this->ui->title = "SAMP";
+        if (this->inputIsJustPressed(InputEventType::BACK)) this->ui->view = UIView::PROJECT;
+    
+    } else if (this->ui->view == UIView::TRACK_CONF) {
+        this->ui->title = "CONF";
+        this->ui->drawHorizontal(9);
+
+        ScrollingList* list = this->ui->trackConfList;
+
+        list->nElements = 6;
+
+        // VOL, DELAY, FREEZE, CLEAR
+        
+        // Pass inputs to scrolling list
+        if (this->inputIsJustPressed(InputEventType::ROTARY_LEFT)) list->rotaryLeft();
+        if (this->inputIsJustPressed(InputEventType::ROTARY_RIGHT)) list->rotaryRight();
+        if (this->inputIsJustPressed(InputEventType::SET)) list->set();
+        if (this->inputIsJustPressed(InputEventType::BACK)) list->back();
+
+        if (list->exit) {
+            this->ui->view = UIView::PROJECT;
+            list->exit = false;
+        }
+
+        // Draw scrolling list elements
+        for (int rel = 0; rel < 4; rel++) {
+            int abs = list->getAbsoluteIndex(rel);
+            bool highlight = list->currentRow == abs;
+            bool editing = list->currentRow == abs && list->editing;
+            int yValue = 11 + rel * 11;
+            //printf("%d -> rel %d   highlight %d, edit %d\n", abs, rel, highlight, editing);
+
+            int buttonOnPassedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - this->ui->buttonLightUpStart).count();
+            if (this->ui->buttonLightUp && buttonOnPassedMs > this->ui->buttonLightUpMs) {
+                this->ui->buttonLightUp = false;
+            }
+
+            bool buttonLightUp = this->ui->buttonLightUp && highlight;
+
+            // Draw box around highlighted row
+            if (highlight && !editing) {
+                this->ui->drawBox(0, yValue - 1, 128, 11);
+            }
+
+            if (abs == 0) {
                 this->ui->drawText(1, yValue, "VOLUME");
-                this->ui->drawText(60, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
+                this->ui->drawText(80, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
                 if (editing) track->volume = SDL_clamp(track->volume + (list->addValue * 0.05), 0, 1);
             } else if (abs == 1) {
                 this->ui->drawText(1, yValue, "DELAY");
-                this->ui->drawText(60, yValue, std::to_string(track->msDelay) + "MS", editing);
+                this->ui->drawText(80, yValue, std::to_string(track->msDelay) + "MS", editing);
                 if (editing) track->msDelay = SDL_clamp(track->msDelay + (list->addValue * 10), 0, 1000);
             } else if (abs == 2) {
                 this->ui->drawText(1, yValue, "MODE");
-                this->ui->drawText(60, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
+                this->ui->drawText(80, yValue, std::to_string((int)round(track->volume * 100)) + "%", editing);
             } else if (abs == 3) {
                 this->ui->drawText(1, yValue, "FREEZE");
-                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
-                else this->ui->drawBox(90, yValue, 35, 8);
+                if (buttonLightUp) this->ui->fillBox(80, yValue + 1, 46, 7);
+                else this->ui->drawBox(80, yValue + 1, 46, 7);
 
                 if (editing) {
                     printf("freeze\n");
@@ -360,8 +499,8 @@ void BitBox::loop() {
                 }
             } else if (abs == 4) {
                 this->ui->drawText(1, yValue, "DUPLICATE");
-                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
-                else this->ui->drawBox(90, yValue, 35, 8);
+                if (buttonLightUp) this->ui->fillBox(80, yValue + 1, 46, 7);
+                else this->ui->drawBox(80, yValue + 1, 46, 7);
 
                 if (editing) {
                     printf("duplicate\n");
@@ -371,8 +510,8 @@ void BitBox::loop() {
                 }
             } else if (abs == 5) {
                 this->ui->drawText(1, yValue, "CLEAR");
-                if (buttonLightUp) this->ui->fillBox(90, yValue, 35, 8);
-                else this->ui->drawBox(90, yValue, 35, 8);
+                if (buttonLightUp) this->ui->fillBox(80, yValue + 1, 46, 7);
+                else this->ui->drawBox(80, yValue + 1, 46, 7);
                 if (editing) {
                     printf("clear\n");
                     list->editing = false;
@@ -452,7 +591,7 @@ void BitBox::loop() {
         }
 
         if (this->inputIsJustPressed(InputEventType::ROTARY)) {
-            Rows* fxSettings = new Rows();
+            /*Rows* fxSettings = new Rows();
 
             RowEntry re1;
             re1.key = "INSERT FX";
@@ -476,7 +615,12 @@ void BitBox::loop() {
 
             fxSettings->options.push_back(re1);
             fxSettings->options.push_back(re2);
-            this->ui->rowsStack.push_back(fxSettings);
+            this->ui->rowsStack.push_back(fxSettings);*/
+            
+            this->ui->pages.push_back(Page::createRowsPage({
+                "INSERT FX",
+                "CLEAR FX"
+            }));
 
         } else if (this->inputIsJustPressed(InputEventType::SET)) {
             this->ui->view = UIView::TRACK_FX_EFFECT;
@@ -593,6 +737,8 @@ int main() {
     BitBox* bb = new BitBox();
     bb->device = new Device();
     bb->ui->bb = bb;
+
+    bb->openProject("/");
 
     while (bb->isRunning) {
         bb->events();

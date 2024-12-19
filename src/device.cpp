@@ -1,6 +1,10 @@
 #include "device.hpp"
 #include <math.h>
 
+// Effects
+#include "lfo.hpp"
+#include "test2.hpp"
+
 Device::Device() {
     SDL_Init(SDL_INIT_EVERYTHING);
     IMG_Init(IMG_INIT_PNG);
@@ -57,10 +61,19 @@ Project* Device::loadProject(string name) {
     Track* track3 = new Track();
     Track* track4 = new Track();
 
-    track1->volume = 0.5;
-    track1->msDelay = 0.5;
-    track1->sample = this->loadSampleFromPath("test.wav");
+    track1->volume = 0.8;
+    track1->msDelay = 0.0;
+    track1->sample = this->loadSampleFromPath("samples/kick.wav");
+
+    track2->volume = 0.5;
+    track2->msDelay = 0.5;
+    track2->sample = this->loadSampleFromPath("samples/ride.wav");
     
+    Effect* fx1 = new BitBoxEffect::TestEffect();
+    track2->effects.push_back(fx1);
+    Effect* fx2 = new BitBoxEffect::Test2Effect();
+    track2->effects.push_back(fx2);
+
     project->tracks.push_back(track1);
     project->tracks.push_back(track2);
     project->tracks.push_back(track3);
@@ -81,11 +94,13 @@ void Device::saveSample(Sample* sample) {
         file.samples.push_back(channelSamples);
     }
 
-    file.save(sample->path);
+    file.save(this->audioDir + sample->path);
+
+    printf("[DEVICEAPI] Saved sample to %s\n", (this->audioDir + sample->path).c_str());
 }
 
 Sample* Device::loadSampleFromPath(string path) {
-    AudioFile<double>* file = new AudioFile<double>(path);
+    AudioFile<double>* file = new AudioFile<double>(this->audioDir + path);
 
     // TODO: Check if file is 44100Hz, 2-Channel, etc.
     // TODO: samples that are too long would break this
@@ -97,6 +112,8 @@ Sample* Device::loadSampleFromPath(string path) {
             sample->data->data[c][s] = file->samples[c][s];
         }
     }
+
+    printf("[DEVICEAPI] Loaded sample from %s\n", (this->audioDir + path).c_str());
 
     return sample;
 }

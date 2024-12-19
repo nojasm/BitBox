@@ -12,11 +12,14 @@ using std::vector;
 using std::string;
 
 enum class UIView {
-    PROJECT,
-    TRACK_SAMP,
-    TRACK_CONF,
+    PROJECT,        // 4 Track View
+    PROJECT_ALT,    // Export project, etc.
+    TRACK_SAMP,     // Track Sample
+    TRACK_CONF,     // Track Config
 
-    TRACK_FX, TRACK_FX_EFFECT, TRACK_FX_SETTINGS
+    TRACK_FX,       // Track Effects
+    TRACK_FX_EFFECT,    // Track Effects (Opened effect)
+    TRACK_FX_SETTINGS   // Track Effect Settings (Clear, Duplicate, Freeze, etc.)
 };
 
 struct CharsetCharacter {
@@ -83,6 +86,14 @@ public:
     Rows();
 };
 
+class Page {
+public:
+    std::function<void(void)> renderFunc;
+    bool exit = false;
+    Page();
+    
+    static Page* createRowsPage(vector<string>);
+};
 
 // Use this to handle scrolling list functionalities
 class ScrollingList {
@@ -167,7 +178,11 @@ public:
     // If empty, show normal UI. If not, show those one by one
     vector<Rows*> rowsStack;
 
-    ScrollingList* trackConfList;
+    vector<Page*> pages;
+
+
+    ScrollingList* trackConfList;   // Clear, freeze, etc.
+    ScrollingList* projectConfList; // Export project, etc.
 
     int testValue = 1;
 
@@ -175,7 +190,7 @@ public:
     // buttonLightUpStart.
     bool buttonLightUp = false;
     std::chrono::high_resolution_clock::time_point buttonLightUpStart;
-    int buttonLightUpMs = 100;
+    int buttonLightUpMs = 200;
 
     int projectTrackRow = 0;
     int projectTrackCol = 0;

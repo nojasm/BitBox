@@ -2,10 +2,22 @@
 
 Rows::Rows() {}
 
+Page::Page() {}
+
+Page* Page::createRowsPage(vector<string> options) {
+    Page* page = new Page();
+    page->renderFunc = [&]() {
+        ui->
+    };
+
+    return page;
+}
+
 UIManager::UIManager() {
     this->charset = new Charset();
     
     this->trackConfList = new ScrollingList();
+    this->projectConfList = new ScrollingList();
 }
 
 void UIManager::drawPixel(int x, int y, bool on) {
@@ -23,21 +35,37 @@ int UIManager::getCharIndexFromChar(char c) {
         return c - 'a';
     } else if (c >= '0' && c <= '9') {
         return (c - '0') + 26;
+    } else if (c == '.') {
+        return 36;
+    } else if (c == ',') {
+        return 37;
+    } else if (c == '!') {
+        return 38;
+    } else if (c == '?') {
+        return 39;
+    } else if (c == '/') {
+        return 40;
+    } else if (c == '\\') {
+        return 41;
+    } else if (c == '%') {
+        return 42;
     } else {
         return 23;
     }
 }
 
 void UIManager::drawBox(int x, int y, int w, int h, bool on) {
-    for (int px = x; px < x + w; px++) {
+    for (int px = x; px < x + w - 1; px++) {
         this->drawPixel(px, y, on);
-        this->drawPixel(px, y + h + 1, on);
+        this->drawPixel(px, y + h - 1, on);
     }
 
-    for (int py = y; py < y + h; py++) {
+    for (int py = y; py < y + h - 1; py++) {
         this->drawPixel(x, py, on);
-        this->drawPixel(x + w, py, on);
+        this->drawPixel(x + w - 1, py, on);
     }
+
+    this->drawPixel(x + w - 1, y + h - 1, on);
 }
 
 void UIManager::fillBox(int x, int y, int w, int h, bool on) {

@@ -15,6 +15,8 @@ class Sample;
 
 class Device {
 public:
+    string audioDir = "data/audio/";
+
     SDL_Window* window;
     SDL_Renderer* renderer;
     SDL_Point* points;

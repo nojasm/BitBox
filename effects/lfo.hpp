@@ -16,7 +16,7 @@ namespace BitBoxEffect {
             Parameter speed;
             speed.id = "speed";
             speed.name = "SPEED";
-            speed.value = 1000.0;
+            speed.value = 500.0;
             speed.min = 1.0;
             speed.max = 2000.0;
             speed.type = ParameterType::MS;
@@ -31,8 +31,8 @@ namespace BitBoxEffect {
                 double speed = getParameterValue(1, relTrackPos);
 
 
-                double wL = in[0][i] * 0.5 * (sin(2 * M_PI * (fc++) / sr) + 1);
-                double wR = in[1][i] * 0.5 * (sin(2 * M_PI * (fc++) / sr) + 1);
+                double wL = in[0][i] * 0.5 * (sin((1000.0 / speed) * 2 * M_PI * (fc++) / sr) + 1);
+                double wR = in[1][i] * 0.5 * (sin((1000.0 / speed) * 2 * M_PI * (fc++) / sr) + 1);
 
                 out[0][i] = in[0][i] * (1 - wet) + wL * wet;
                 out[1][i] = in[1][i] * (1 - wet) + wR * wet;

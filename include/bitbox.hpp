@@ -17,6 +17,7 @@ class AudioData {
 public:
     int length;
     double** data;
+    ~AudioData();
     AudioData();
     AudioData(int);
 };
@@ -26,6 +27,7 @@ class Sample {
 public:
     AudioData* data;
     string path;
+    ~Sample();
     Sample();
     Sample(int);
 };
@@ -100,7 +102,7 @@ class BitBox;
 
 class Track {
 public:
-    Sample* sample;
+    Sample* sample = nullptr;
     vector<Effect*> effects;
     BitBox* bitBox;
 
@@ -125,6 +127,8 @@ public:
     vector<Track*> tracks;
 
     Project();
+    AudioData* render();
+    Sample* exportToSample();
 };
 
 struct ProjectInfo {
@@ -172,6 +176,8 @@ public:
 
     void clearScreen();
     void setPixel(int, int, bool);
+
+    void openProject(string);
 
     vector<string> getEffectNames();
     Effect* newEffect(string);
